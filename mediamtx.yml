@@ -309,9 +309,9 @@ webrtcAdditionalHosts: [ ]
 # TURN/TURNS servers forces all traffic through them.
 webrtcICEServers2:
   #  - url:
-  - url: turn:coturn.s2tlive.com:5349
-    username: admin
-    password: password
+#  - url: turn:coturn.s2tlive.com:5349
+#    username: admin
+#    password: password
   # if user is "AUTH_SECRET", then authentication is secret based.
   # the secret must be inserted into the password field.
   # username: ''
@@ -607,7 +607,7 @@ pathDefaults:
   # * G1, G2, ...: regular expression groups, if path name is
   #   a regular expression.
   # * MTX_SEGMENT_PATH: segment file path
-  runOnRecordSegmentComplete: ./orbit-play-api uploadRecording --path $MTX_SEGMENT_PATH
+  runOnRecordSegmentComplete: ./orbit-play-api uploadRecording --path /home/ubuntu/orbit-launch/$MTX_SEGMENT_PATH
 #    curl --location "http://localhost:3000/upload" --header 'Content-Type: text/plain' --data "/home/ubuntu/orbit-launch/${MTX_SEGMENT_PATH}"
 
 ###############################################
