@@ -7,7 +7,7 @@
 # Global settings -> General
 
 # Verbosity of the program; available values are "error", "warn", "info", "debug".
-logLevel: info
+logLevel: error
 # Destinations of log messages; available values are "stdout", "file" and "syslog".
 logDestinations: [stdout]
 # If "file" is in logDestinations, this is the file which will receive the logs.
@@ -74,7 +74,7 @@ authInternalUsers:
   # if the IP is localhost.
 - user: any
   pass:
-  ips: ['127.0.0.1', '::1']
+  ips: []
   permissions:
   - action: api
   - action: metrics
@@ -285,7 +285,7 @@ hls: yes
 hlsAddress: :8888
 # Enable TLS/HTTPS on the HLS server.
 # This is required for Low-Latency HLS.
-hlsEncryption: no
+hlsEncryption: yes
 # Path to the server key. This is needed only when encryption is yes.
 # This can be generated with:
 # openssl genrsa -out server.key 2048
@@ -307,17 +307,17 @@ hlsAlwaysRemux: yes
 # * mpegts - uses MPEG-TS segments, for maximum compatibility.
 # * fmp4 - uses fragmented MP4 segments, more efficient.
 # * lowLatency - uses Low-Latency HLS.
-hlsVariant: lowLatency
+hlsVariant: mpegts
 # Number of HLS segments to keep on the server.
 # Segments allow to seek through the stream.
 # Their number doesn't influence latency.
-hlsSegmentCount: 7
+hlsSegmentCount: 60
 # Minimum duration of each segment.
 # A player usually puts 3 segments in a buffer before reproducing the stream.
 # The final segment duration is also influenced by the interval between IDR frames,
 # since the server changes the duration in order to include at least one IDR frame
 # in each segment.
-hlsSegmentDuration: 1s
+hlsSegmentDuration: 3s
 # Minimum duration of each part.
 # A player usually puts 3 parts in a buffer before reproducing the stream.
 # Parts are used in Low-Latency HLS in place of segments.
@@ -333,7 +333,7 @@ hlsSegmentMaxSize: 50M
 hlsDirectory: ''
 # The muxer will be closed when there are no
 # reader requests and this amount of time has passed.
-hlsMuxerCloseAfter: 60s
+hlsMuxerCloseAfter: 60m
 
 ###############################################
 # Global settings -> WebRTC server
@@ -343,7 +343,7 @@ webrtc: yes
 # Address of the WebRTC HTTP listener.
 webrtcAddress: :8889
 # Enable TLS/HTTPS on the WebRTC server.
-webrtcEncryption: no
+webrtcEncryption: yes
 # Path to the server key.
 # This can be generated with:
 # openssl genrsa -out server.key 2048
@@ -459,7 +459,7 @@ pathDefaults:
   # Path of recording segments.
   # Extension is added automatically.
   # Available variables are %path (path name), %Y %m %d %H %M %S %f %s (time in strftime format)
-  recordPath: ./recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+  recordPath: ./recordings/%path/%Y-%m-%d-%H-%M-%S
   # Format of recorded segments.
   # Available formats are "fmp4" (fragmented MP4) and "mpegts" (MPEG-TS).
   recordFormat: fmp4
@@ -646,21 +646,21 @@ pathDefaults:
   # * RTSP_PORT: RTSP server port
   # * G1, G2, ...: regular expression groups, if path name is
   #   a regular expression.
-  runOnReady: echo "connected $MTX_PATH $REMOTE_IP $MTX_CONN_TYPE"
-#  runOnReady: >
-#    grpcurl -plaintext -d
-#    '{"camera_id": "$MTX_PATH", "remote_ip": "$REMOTE_IP"}'
-#    localhost:50051 camera.CameraService/CameraConnect
+#  runOnReady: echo "connected $MTX_PATH $REMOTE_IP $MTX_CONN_TYPE"
+  runOnReady: >
+    grpcurl -plaintext -d
+    '{"camera_id": "$MTX_PATH", "remote_ip": "$REMOTE_IP"}'
+    localhost:50051 camera.CameraService/CameraConnect
   # Restart the command if it exits.
   runOnReadyRestart: no
   # Command to run when the stream is not available anymore.
   # Environment variables are the same of runOnReady.
-  runOnNotReady: echo "disconnected $MTX_PATH $REMOTE_IP $MTX_CONN_TYPE"
+#  runOnNotReady: echo "disconnected $MTX_PATH $REMOTE_IP $MTX_CONN_TYPE"
 
-#  runOnNotReady: >
-#    grpcurl -plaintext -d
-#    '{"camera_id": "$MTX_PATH", "remote_ip": "$REMOTE_IP"}'
-#    localhost:50051 camera.CameraService/CameraDisconnect
+  runOnNotReady: >
+    grpcurl -plaintext -d
+    '{"camera_id": "$MTX_PATH", "remote_ip": "$REMOTE_IP"}'
+    localhost:50051 camera.CameraService/CameraDisconnect
 
   # Command to run when a client starts reading.
   # This is terminated with SIGINT when a client stops reading.
