@@ -221,19 +221,6 @@
         zoomLabel = 1;
         zoomLevelSpan.textContent = '1x';
     });
-
-    // Controls visibility
-    videoContainer.addEventListener('mouseenter', () => {
-        controlsContainer.style.visibility = 'visible';
-    });
-
-    videoContainer.addEventListener('mouseleave', () => {
-        setTimeout(() => {
-            if (!document.fullscreenElement) {
-                controlsContainer.style.visibility = 'hidden';
-            }
-        }, 500);
-    });
 </script>
 </body>
 </html>
