@@ -17,6 +17,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/shirou/gopsutil/cpu"
+	"github.com/shirou/gopsutil/disk"
+	"github.com/shirou/gopsutil/mem"
+
 	"github.com/bluenviron/mediamtx/internal/auth"
 	"github.com/bluenviron/mediamtx/internal/conf"
 	"github.com/bluenviron/mediamtx/internal/defs"
@@ -128,6 +132,11 @@ type apiParent interface {
 	APIConfigSet(conf *conf.Conf)
 }
 
+// SystemStatus contains methods used by the API and Metrics server.
+type SystemStatus interface {
+	APIGetSystemStatus() (*defs.SystemStats, error)
+}
+
 // API is an API server.
 type API struct {
 	Address        string
@@ -228,6 +237,8 @@ func (a *API) Initialize() error {
 	group.GET("/recordings/get/*name", a.onRecordingsGet)
 	group.DELETE("/recordings/deletesegment", a.onRecordingDeleteSegment)
 
+	group.GET("/system/stats", a.onGetSystemStats)
+
 	network, address := restrictnetwork.Restrict("tcp", a.Address)
 
 	a.httpServer = &httpp.Server{
@@ -306,6 +317,37 @@ func (a *API) middlewareAuth(ctx *gin.Context) {
 		ctx.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
+}
+
+func getSystemStats() (*defs.SystemStats, error) {
+	stats := &defs.SystemStats{}
+
+	// Get CPU usage
+	cpuPercent, err := cpu.Percent(0, false)
+	if err != nil {
+		return nil, err
+	}
+	if len(cpuPercent) > 0 {
+		stats.CPUUsagePercent = cpuPercent[0]
+	}
+
+	// Get memory usage
+	vmStat, err := mem.VirtualMemory()
+	if err != nil {
+		return nil, err
+	}
+	stats.TotalMemory = vmStat.Total
+	stats.UsedMemory = vmStat.Used
+
+	// Get disk usage (assuming '/' as the disk path for simplicity)
+	diskStat, err := disk.Usage("/")
+	if err != nil {
+		return nil, err
+	}
+	stats.TotalDiskSpace = diskStat.Total
+	stats.UsedDiskSpace = diskStat.Used
+
+	return stats, nil
 }
 
 func (a *API) onConfigGlobalGet(ctx *gin.Context) {
@@ -1167,4 +1209,13 @@ func (a *API) ReloadConf(conf *conf.Conf) {
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
 	a.Conf = conf
+}
+
+func (a *API) onGetSystemStats(ctx *gin.Context) {
+	stats, err := getSystemStats()
+	if err != nil {
+		a.writeError(ctx, http.StatusInternalServerError, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, stats)
 }
