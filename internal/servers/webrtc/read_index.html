@@ -1,13 +1,22 @@
 <!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>WebRTC Player</title>
     <link
             rel="stylesheet"
             href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
     />
+    <!-- SDK Scripts -->
+    <script src="https://orbit-play-ptz-files.s3.ap-south-1.amazonaws.com/decoder_def.js"></script>
+    <script src="https://orbit-play-ptz-files.s3.ap-south-1.amazonaws.com/jadecoder.js"></script>
+    <script src="https://orbit-play-ptz-files.s3.ap-south-1.amazonaws.com/hevcdec.js"></script>
+    <script src="https://orbit-play-ptz-files.s3.ap-south-1.amazonaws.com/glutils.js"></script>
+    <script src="https://orbit-play-ptz-files.s3.ap-south-1.amazonaws.com/connector.js"></script>
+    <script src="https://orbit-play-ptz-files.s3.ap-south-1.amazonaws.com/audioplay.js"></script>
+    <script src="https://orbit-play-ptz-files.s3.ap-south-1.amazonaws.com/md5.js"></script>
+    <script src="https://orbit-play-ptz-files.s3.ap-south-1.amazonaws.com/play.js"></script>
     <style>
         body {
             background: #000;
@@ -37,24 +46,23 @@
 
         .video-controls {
             position: absolute;
-            bottom: 5px;
-            left: 5px;
-            right: 5px;
+            bottom: 2px;
+            left: 2px;
+            right: 2px;
             display: flex;
             align-items: center;
-            background: rgba(0, 0, 0, 0.6);
-            padding: 14px 20px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px 15px;
             border-radius: 8px;
             gap: 10px;
             z-index: 10;
-            visibility: hidden;
         }
 
         .control-btn {
             background: none;
             border: none;
             color: #fff;
-            font-size: 1.2rem;
+            font-size: 1rem;
             cursor: pointer;
         }
 
@@ -64,7 +72,7 @@
 
         .zoom-level {
             margin: 0 5px;
-            font-size: 1rem;
+            font-size: 0.8rem;
         }
 
         #message {
@@ -86,13 +94,21 @@
             text-shadow: 0 0 5px black;
             z-index: 1;
         }
+
     </style>
     <script defer src="./reader.js"></script>
+
 </head>
 <body>
 <div class="video-container" id="video-container">
     <video id="video" autoplay muted playsinline></video>
+
     <div id="message"></div>
+
+    <div id="cameraCanvas" style="display: none;">
+        <canvas id="canvas"></canvas>
+    </div>
+
     <div class="video-controls" id="custom-controls">
         <button class="control-btn" id="play-pause">
             <i class="fa-solid fa-pause"></i>
@@ -100,7 +116,21 @@
         <button class="control-btn" id="mute">
             <i class="fa-solid fa-volume-xmark"></i>
         </button>
+        <button class="control-btn" id="ptz-left">
+            <i class="fa-solid fa-angle-left"></i>
+        </button>
+        <button class="control-btn" id="ptz-top">
+            <i class="fa-solid fa-angle-up"></i>
+        </button>
+        <button class="control-btn" id="ptz-bottom">
+            <i class="fa-solid fa-angle-down"></i>
+        </button>
+        <button class="control-btn" id="ptz-right">
+            <i class="fa-solid fa-angle-right"></i>
+        </button>
+
         <span class="spacer"></span>
+
         <span class="zoom-level" id="zoom-level">1x</span>
         <button class="control-btn" id="zoom-in">
             <i class="fa-solid fa-magnifying-glass-plus"></i>
@@ -118,13 +148,39 @@
 </div>
 
 <script>
-    const videoContainer = document.getElementById('video-container');
-    const controlsContainer = document.getElementById('custom-controls');
+    const urlParams = new URLSearchParams(window.location.search);
+    const controlsQuery = urlParams.get('controls'); // This will look for ?controls=true
+    const zoomQuery = urlParams.get('zoom'); // This will look for ?zoom=true
+    const ptzQuery = urlParams.get('ptz'); // This will look for ?zoom=true
+
+    if (controlsQuery === 'false' || !controlsQuery) {
+        document.getElementById('custom-controls').style.display = 'none';
+    }
+    if (zoomQuery === 'false' || !zoomQuery) {
+        document.getElementById('zoom-in').style.display = 'none';
+        document.getElementById('zoom-out').style.display = 'none';
+        document.getElementById('zoom-reset').style.display = 'none';
+        document.getElementById('zoom-level').style.display = 'none';
+    }
+    if (ptzQuery === 'false' || !ptzQuery) {
+        document.getElementById('ptz-left').style.display = 'none';
+        document.getElementById('ptz-right').style.display = 'none';
+        document.getElementById('ptz-top').style.display = 'none';
+        document.getElementById('ptz-bottom').style.display = 'none';
+    }
+
+
     const video = document.getElementById('video');
     const playPauseBtn = document.getElementById('play-pause');
     const muteBtn = document.getElementById('mute');
     const fullscreenBtn = document.getElementById('fullscreen');
-    const message = document.getElementById('message');
+
+    // PTZ controls
+    const ptzTopBtn = document.getElementById('ptz-top');
+    const ptzBottomBtn = document.getElementById('ptz-bottom');
+    const ptzLeftBtn = document.getElementById('ptz-left');
+    const ptzRightBtn = document.getElementById('ptz-right');
+
 
     // Zoom controls
     const zoomInBtn = document.getElementById('zoom-in');
@@ -134,12 +190,88 @@
     let zoomLevel = 1;
     let zoomLabel = 1;
 
+    // PTZ Config
+    const CONFIG = {
+        defaultSDKCredentials: {
+            username: 'ptz',
+            password: 'ptz@sst',
+        },
+    };
+
+    let streamId = window.location.href.split('/').at(window.location.href.split('/').length - 2);
+    const channel = 0;
+
+
     // Initialize WebRTC Player
     const loadAttributesFromQuery = () => {
         const params = new URLSearchParams(window.location.search);
         video.muted = parseBoolString(params.get('muted'), true);
         video.autoplay = parseBoolString(params.get('autoplay'), true);
         video.playsInline = parseBoolString(params.get('playsinline'), true);
+
+        // Get SDK flag and credentials
+        const enablePTZ = parseBoolString(params.get('ptz'), false);
+        const sdkUsername = params.get('username') || CONFIG.defaultSDKCredentials.username;
+        const sdkPassword = params.get('password') || CONFIG.defaultSDKCredentials.password;
+
+        // Store SDK parameters globally
+        window.sdkConfig = {
+            enabled: enablePTZ,
+            username: sdkUsername,
+            password: sdkPassword,
+        };
+    };
+
+    // PTZ functions
+    ptzTopBtn.addEventListener('click', () => {
+        if (!window.sdkConfig.enabled) return;
+        Player.ptz_ctrl(streamId, '', channel, 2, 6);
+        setTimeout(() => stopPtz(), 1000);
+    });
+
+    ptzBottomBtn.addEventListener('click', () => {
+        if (!window.sdkConfig.enabled) return;
+        Player.ptz_ctrl(streamId, '', channel, 3, 6);
+        setTimeout(() => stopPtz(), 1000);
+    });
+
+    ptzLeftBtn.addEventListener('click', () => {
+        if (!window.sdkConfig.enabled) return;
+        Player.ptz_ctrl(streamId, '', channel, 4, 6);
+        setTimeout(() => stopPtz(), 1000);
+    });
+
+    ptzRightBtn.addEventListener('click', () => {
+        if (!window.sdkConfig.enabled) return;
+        Player.ptz_ctrl(streamId, '', channel, 5, 6);
+        setTimeout(() => stopPtz(), 1000);
+    });
+
+
+    const stopPtz = () => {
+        if (!window.sdkConfig.enabled) return;
+        Player.ptz_ctrl(streamId, '', channel, 0, 0);
+    };
+
+    // Modified initialization function
+    const initH5Sdk = () => {
+        if (!window.sdkConfig.enabled) return;
+
+        let canvas = document.getElementById('canvas');
+        Player.init([canvas]);
+
+        Player.ConnectDevice(
+            streamId,
+            '',
+            window.sdkConfig.username,
+            window.sdkConfig.password,
+            0,
+            80,
+            0,
+            channel,
+            0,
+            'wss',
+        );
     };
 
     const parseBoolString = (str, defaultVal) => {
@@ -151,11 +283,12 @@
 
     const setMessage = (str) => {
         message.innerText = str;
-        controlsContainer.style.visibility = str ? 'hidden' : 'visible';
+        document.getElementById('custom-controls').style.visibility = str ? 'hidden' : 'visible';
     };
 
     window.addEventListener('DOMContentLoaded', () => {
         loadAttributesFromQuery();
+        initH5Sdk();
 
         new MediaMTXWebRTCReader({
             url: new URL('whep', window.location.href) + window.location.search,
@@ -170,17 +303,20 @@
         });
     });
 
-    // Control event listeners
+
+    // Play/Pause toggle
     playPauseBtn.addEventListener('click', () => {
         if (video.paused) {
             video.play();
-            playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+            playPauseBtn.innerHTML =
+                '<i class="fa-solid fa-pause"></i>';
         } else {
             video.pause();
             playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
         }
     });
 
+    // Mute/Unmute toggle
     muteBtn.addEventListener('click', () => {
         video.muted = !video.muted;
         muteBtn.innerHTML = video.muted
@@ -188,39 +324,58 @@
             : '<i class="fa-solid fa-volume-high"></i>';
     });
 
+    // Fullscreen
     fullscreenBtn.addEventListener('click', () => {
+        const videoContainer =
+            document.querySelector('.video-container');
         if (!document.fullscreenElement) {
-            videoContainer.requestFullscreen?.();
+            if (videoContainer.requestFullscreen) {
+                videoContainer.requestFullscreen();
+            } else if (videoContainer.webkitRequestFullscreen) {
+                videoContainer.webkitRequestFullscreen();
+            } else if (videoContainer.msRequestFullscreen) {
+                videoContainer.msRequestFullscreen();
+            }
         } else {
-            document.exitFullscreen?.();
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+            } else if (document.msExitFullscreen) {
+                document.msExitFullscreen();
+            }
         }
     });
 
-    // Zoom controls
+    // Zoom In
     zoomInBtn.addEventListener('click', () => {
         if (zoomLevel < 3.25) {
             zoomLevel += 0.25;
             video.style.transform = `scale(${zoomLevel})`;
             zoomLabel += 1;
-            zoomLevelSpan.textContent = `${zoomLabel}x`;
+            zoomLevelSpan.innerHTML = zoomLabel + 'x';
         }
     });
 
+    // Zoom Out
     zoomOutBtn.addEventListener('click', () => {
         if (zoomLevel > 1) {
             zoomLevel -= 0.25;
             video.style.transform = `scale(${zoomLevel})`;
             zoomLabel -= 1;
-            zoomLevelSpan.textContent = `${zoomLabel}x`;
+            zoomLevelSpan.innerHTML = zoomLabel + 'x';
         }
     });
 
+    // Zoom Reset
     zoomResetBtn.addEventListener('click', () => {
         zoomLevel = 1;
-        video.style.transform = 'scale(1)';
+        video.style.transform = `scale(${zoomLevel})`;
         zoomLabel = 1;
-        zoomLevelSpan.textContent = '1x';
+        zoomLevelSpan.innerHTML = zoomLabel + 'x';
     });
+
+
 </script>
 </body>
 </html>
